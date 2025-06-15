@@ -51,14 +51,12 @@ func PreWork(Conn net.Conn, Manager *ClientManager) {
 		}
 		if strings.HasPrefix(string(Username[:n]), "连接:") {
 			fmt.Println(IP+"即将与", string(Username[7:n]), "进行交流")
-			ch1 := make(chan bool)
-			go ChatEachOther(Manager, Conn, string(Username[7:n]), ch1)
-			<-ch1
+			ChatEachOther(Manager, Conn, string(Username[7:n]))
 		}
 	}
 }
 
-func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string, ch1 chan bool) {
+func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string) {
 	defer Conn.Close()
 	Manager.Lock.Lock()
 	TargetConn, ok := Manager.list[Target]
@@ -75,12 +73,15 @@ func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string, ch1 cha
 	go ChatEachOtherAchieve(TargetConn, Conn, &wg, Manager)
 	wg.Wait()
 	fmt.Println("Over")
-	ch1 <- true
 }
 
 func ChatEachOtherAchieve(Conn, TargetConn net.Conn, wg *sync.WaitGroup, Manager *ClientManager) {
 	defer wg.Done()
 	for {
+		if Conn == nil || TargetConn == nil {
+			fmt.Println("其中一方退出，聊天结束")
+			return
+		}
 		Temp := make([]byte, 1024)
 		n, err := Conn.Read(Temp)
 		if err != nil && err != io.EOF {
@@ -94,6 +95,8 @@ func ChatEachOtherAchieve(Conn, TargetConn net.Conn, wg *sync.WaitGroup, Manager
 			if strings.HasSuffix(string(Temp[:n]), "对方已退出连接") {
 				TargetConn.Write([]byte("对方已退出连接"))
 				Manager.RemoveClient(Conn.RemoteAddr().String())
+				Conn.Close()
+				Conn = nil
 				return
 			}
 			Info := Conn.RemoteAddr().String() + ":" + string(Temp[:n])
