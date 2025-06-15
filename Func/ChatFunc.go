@@ -35,13 +35,13 @@ func PreWork(Conn net.Conn, Manager *ClientManager) {
 	IP := Conn.RemoteAddr().String()
 	fmt.Println("New client:", IP)
 	Manager.AddClient(IP, Conn)
-	_, err := Conn.Write([]byte("请按照格式输入聊天对象的IP：（连接:IP）\n"))
-	if err != nil {
-		fmt.Println("Write error:", err)
-		Conn.Close()
-		return
-	}
 	for {
+		_, err := Conn.Write([]byte("请按照格式输入聊天对象的IP：（连接:IP）\n"))
+		if err != nil {
+			fmt.Println("Write error:", err)
+			Conn.Close()
+			return
+		}
 		Username := make([]byte, 1024)
 		n, err := Conn.Read(Username)
 		if err != nil {
@@ -74,6 +74,7 @@ func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string, ch1 cha
 	go ChatEachOtherAchieve(Conn, TargetConn, &wg, Manager)
 	go ChatEachOtherAchieve(TargetConn, Conn, &wg, Manager)
 	wg.Wait()
+	fmt.Println("Over")
 	ch1 <- true
 }
 
@@ -85,12 +86,15 @@ func ChatEachOtherAchieve(Conn, TargetConn net.Conn, wg *sync.WaitGroup, Manager
 		if err != nil && err != io.EOF {
 			fmt.Println("读取数据失败：", err)
 			return
+		} else if err == io.EOF {
+			fmt.Println("无输入")
+			return
 		}
 		if n != 0 {
 			if strings.HasSuffix(string(Temp[:n]), "对方已退出连接") {
-				TargetConn.Write([]byte("对方已退出，聊天结束"))
+				TargetConn.Write([]byte("对方已退出连接"))
 				Manager.RemoveClient(Conn.RemoteAddr().String())
-				break
+				return
 			}
 			Info := Conn.RemoteAddr().String() + ":" + string(Temp[:n])
 			TargetConn.Write([]byte(Info))
