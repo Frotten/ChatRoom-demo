@@ -25,24 +25,10 @@ func (man *ClientManager) AddClient(IP string, Conn net.Conn) {
 	man.list[IP] = Conn
 }
 
-func ChatEachOtherAchieve(Conn, TargetConn net.Conn, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for {
-		Temp := make([]byte, 1024)
-		n, err := Conn.Read(Temp)
-		if err != nil && err != io.EOF {
-			fmt.Println("读取数据失败：", err)
-			return
-		}
-		if n != 0 {
-			if strings.ToUpper(string(Temp[:n])) == "EXIT" {
-				TargetConn.Write([]byte("对方停止了聊天"))
-				return
-			}
-			Info := Conn.RemoteAddr().String() + ":" + string(Temp[:n])
-			TargetConn.Write([]byte(Info))
-		}
-	}
+func (man *ClientManager) RemoveClient(IP string) {
+	man.Lock.Lock()
+	defer man.Lock.Unlock()
+	man.list[IP] = nil
 }
 
 func PreWork(Conn net.Conn, Manager *ClientManager) {
@@ -65,13 +51,14 @@ func PreWork(Conn net.Conn, Manager *ClientManager) {
 		}
 		if strings.HasPrefix(string(Username[:n]), "连接:") {
 			fmt.Println(IP+"即将与", string(Username[7:n]), "进行交流")
-			go ChatEachOther(Manager, Conn, string(Username[7:n]))
-			break
+			ch1 := make(chan bool)
+			go ChatEachOther(Manager, Conn, string(Username[7:n]), ch1)
+			<-ch1
 		}
 	}
 }
 
-func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string) {
+func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string, ch1 chan bool) {
 	defer Conn.Close()
 	Manager.Lock.Lock()
 	TargetConn, ok := Manager.list[Target]
@@ -84,9 +71,31 @@ func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string) {
 	TargetConn.Write([]byte("与" + Conn.RemoteAddr().String() + "的聊天已开始\n"))
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go ChatEachOtherAchieve(Conn, TargetConn, &wg)
-	go ChatEachOtherAchieve(TargetConn, Conn, &wg)
+	go ChatEachOtherAchieve(Conn, TargetConn, &wg, Manager)
+	go ChatEachOtherAchieve(TargetConn, Conn, &wg, Manager)
 	wg.Wait()
+	ch1 <- true
+}
+
+func ChatEachOtherAchieve(Conn, TargetConn net.Conn, wg *sync.WaitGroup, Manager *ClientManager) {
+	defer wg.Done()
+	for {
+		Temp := make([]byte, 1024)
+		n, err := Conn.Read(Temp)
+		if err != nil && err != io.EOF {
+			fmt.Println("读取数据失败：", err)
+			return
+		}
+		if n != 0 {
+			if strings.HasSuffix(string(Temp[:n]), "对方已退出连接") {
+				TargetConn.Write([]byte("对方已退出，聊天结束"))
+				Manager.RemoveClient(Conn.RemoteAddr().String())
+				break
+			}
+			Info := Conn.RemoteAddr().String() + ":" + string(Temp[:n])
+			TargetConn.Write([]byte(Info))
+		}
+	}
 }
 
 func Receive(conn net.Conn) {
@@ -94,7 +103,6 @@ func Receive(conn net.Conn) {
 		Message := make([]byte, 1024)
 		n, err := conn.Read(Message)
 		if err != nil && err != io.EOF {
-			fmt.Println("Error Reading")
 			return
 		}
 		if n != 0 {
