@@ -27,6 +27,7 @@ func main() {
 		Temp = strings.TrimSpace(Temp)
 		if strings.ToUpper(Temp) == "EXIT" {
 			fmt.Println("EXIT Succeed")
+			Conn.Write([]byte("对方已退出连接"))
 			break
 		}
 		Conn.Write([]byte(Temp))
