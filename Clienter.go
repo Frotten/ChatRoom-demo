@@ -22,7 +22,7 @@ func main() {
 		Temp, err := Reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error Reading")
-			continue
+			break
 		}
 		Temp = strings.TrimSpace(Temp)
 		if strings.ToUpper(Temp) == "EXIT" {
