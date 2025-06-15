@@ -36,6 +36,9 @@ func PreWork(Conn net.Conn, Manager *ClientManager) {
 	fmt.Println("New client:", IP)
 	Manager.AddClient(IP, Conn)
 	for {
+		if Manager.list[IP] == nil {
+			break
+		}
 		_, err := Conn.Write([]byte("请按照格式输入聊天对象的IP：（连接:IP）\n"))
 		if err != nil {
 			fmt.Println("Write error:", err)
@@ -57,7 +60,6 @@ func PreWork(Conn net.Conn, Manager *ClientManager) {
 }
 
 func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string) {
-	defer Conn.Close()
 	Manager.Lock.Lock()
 	TargetConn, ok := Manager.list[Target]
 	Manager.Lock.Unlock()
@@ -69,15 +71,17 @@ func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string) {
 	TargetConn.Write([]byte("与" + Conn.RemoteAddr().String() + "的聊天已开始\n"))
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go ChatEachOtherAchieve(Conn, TargetConn, &wg, Manager)
-	go ChatEachOtherAchieve(TargetConn, Conn, &wg, Manager)
+	go ChatEachOtherAchieve(Conn.RemoteAddr().String(), Target, &wg, Manager)
+	go ChatEachOtherAchieve(Target, Conn.RemoteAddr().String(), &wg, Manager)
 	wg.Wait()
 	fmt.Println("Over")
 }
 
-func ChatEachOtherAchieve(Conn, TargetConn net.Conn, wg *sync.WaitGroup, Manager *ClientManager) {
+func ChatEachOtherAchieve(IP1, IP2 string, wg *sync.WaitGroup, Manager *ClientManager) {
 	defer wg.Done()
 	for {
+		Conn := Manager.list[IP1]
+		TargetConn := Manager.list[IP2]
 		if Conn == nil || TargetConn == nil {
 			fmt.Println("其中一方退出，聊天结束")
 			return
