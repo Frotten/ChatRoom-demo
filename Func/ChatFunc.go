@@ -1,7 +1,9 @@
 package Func
 
 import (
+	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"io"
 	"net"
 	"strings"
@@ -120,4 +122,19 @@ func Receive(conn net.Conn) {
 			fmt.Println(string(Message[:n]))
 		}
 	}
+}
+
+func CreateTable(db *sql.DB) error {
+	query := `CREATE TABLE IF NOT EXISTS Client (
+	    id INT AUTO_INCREMENT PRIMARY KEY,
+		username VARCHAR(12) NOT NULL UNIQUE,
+		password VARCHAR(12) NOT NULL UNIQUE
+	);`
+	_, err := db.Exec(query)
+	if err != nil {
+		fmt.Println("Error creating table:", err)
+		return err
+	}
+	fmt.Println("Table created successfully")
+	return nil
 }

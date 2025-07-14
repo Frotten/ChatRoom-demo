@@ -27,6 +27,7 @@ func main() {
 		return
 	}
 	defer db.Close()
+	err = Func.CreateTable(db)
 	for {
 		Conn, err := listener.Accept()
 		if err != nil {
