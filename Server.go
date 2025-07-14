@@ -2,7 +2,9 @@ package main
 
 import (
 	"ChatRoomLittle/Func"
+	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"log"
 	"net"
 )
@@ -14,6 +16,17 @@ func main() {
 	}
 	defer listener.Close()
 	Manager := Func.CreateClientManager()
+	db, err := sql.Open("mysql", "Cheter:1234@tcp(192.168.56.1:3306)/ChatRoom?charset=utf8")
+	if err != nil {
+		db.Close()
+		log.Fatal("Database connection error:", err)
+	}
+	err = db.Ping()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer db.Close()
 	for {
 		Conn, err := listener.Accept()
 		if err != nil {
