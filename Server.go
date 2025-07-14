@@ -34,6 +34,6 @@ func main() {
 			fmt.Println("Accept error:", err)
 			continue
 		}
-		go Func.PreWork(Conn, Manager)
+		go Func.PreWork(db, Conn, Manager)
 	}
 }

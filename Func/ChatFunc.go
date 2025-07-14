@@ -6,13 +6,16 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"io"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
 
 type ClientManager struct {
-	list map[string]net.Conn
-	Lock sync.Mutex
+	list        map[string]net.Conn
+	Lock        sync.Mutex
+	OnlineUsers int
 }
 
 func CreateClientManager() *ClientManager {
@@ -21,92 +24,268 @@ func CreateClientManager() *ClientManager {
 	}
 }
 
-func (man *ClientManager) AddClient(IP string, Conn net.Conn) {
+func (man *ClientManager) AddClient(Conn net.Conn, UserName string) {
 	man.Lock.Lock()
 	defer man.Lock.Unlock()
-	man.list[IP] = Conn
+	man.list[UserName] = Conn
+	man.OnlineUsers++
+	for _, Conn := range man.list {
+		if Conn != nil {
+			Conn.Write([]byte("用户" + UserName + "已上线,当前在线人数：" + strconv.Itoa(man.OnlineUsers)))
+		}
+	}
 }
 
 func (man *ClientManager) RemoveClient(IP string) {
 	man.Lock.Lock()
 	defer man.Lock.Unlock()
 	man.list[IP] = nil
+	man.OnlineUsers--
+	for _, Conn := range man.list {
+		if Conn != nil {
+			Conn.Write([]byte("用户" + IP + "已下线,当前在线人数：" + strconv.Itoa(man.OnlineUsers)))
+		}
+	}
 }
 
-func PreWork(Conn net.Conn, Manager *ClientManager) {
+func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 	IP := Conn.RemoteAddr().String()
 	fmt.Println("New client:", IP)
-	Manager.AddClient(IP, Conn)
-	for {
-		if Manager.list[IP] == nil {
-			break
-		}
-		_, err := Conn.Write([]byte("请按照格式输入聊天对象的IP：（连接:IP）\n"))
-		if err != nil {
-			fmt.Println("Write error:", err)
-			Conn.Close()
-			return
-		}
-		Username := make([]byte, 1024)
-		n, err := Conn.Read(Username)
-		if err != nil {
-			fmt.Println("Write error:", err)
-			Conn.Close()
-			return
-		}
-		if strings.HasPrefix(string(Username[:n]), "连接:") {
-			fmt.Println(IP+"即将与", string(Username[7:n]), "进行交流")
-			ChatEachOther(Manager, Conn, string(Username[7:n]))
-		}
-	}
-}
-
-func ChatEachOther(Manager *ClientManager, Conn net.Conn, Target string) {
-	Manager.Lock.Lock()
-	TargetConn, ok := Manager.list[Target]
-	Manager.Lock.Unlock()
-	if !ok {
-		Conn.Write([]byte("目标客户端不在线或不存在。\n"))
+	tag := true
+	Temp, err := os.ReadFile("D:\\Code\\GoCode\\ChatRoomLittle\\提示语.txt")
+	if err != nil {
+		fmt.Println("Write error:", err)
+		Conn.Close()
 		return
 	}
-	Conn.Write([]byte("与" + Target + "的聊天已开始"))
-	TargetConn.Write([]byte("与" + Conn.RemoteAddr().String() + "的聊天已开始\n"))
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go ChatEachOtherAchieve(Conn.RemoteAddr().String(), Target, &wg, Manager)
-	go ChatEachOtherAchieve(Target, Conn.RemoteAddr().String(), &wg, Manager)
-	wg.Wait()
-	fmt.Println("Over")
-}
-
-func ChatEachOtherAchieve(IP1, IP2 string, wg *sync.WaitGroup, Manager *ClientManager) {
-	defer wg.Done()
 	for {
-		Conn := Manager.list[IP1]
-		TargetConn := Manager.list[IP2]
-		if Conn == nil || TargetConn == nil {
-			fmt.Println("其中一方退出，聊天结束")
+		if Conn == nil {
 			return
 		}
-		Temp := make([]byte, 1024)
-		n, err := Conn.Read(Temp)
-		if err != nil && err != io.EOF {
-			fmt.Println("读取数据失败：", err)
+		if tag == true {
+			_, err = Conn.Write(Temp)
+			if err != nil {
+				fmt.Println("Write error:", err)
+				Conn.Close()
+				return
+			}
+			tag = false
+		}
+		Command := make([]byte, 1024)
+		n, err := Conn.Read(Command)
+		if err != nil {
+			fmt.Println("Write error:", err)
+			Conn.Close()
 			return
-		} else if err == io.EOF {
-			fmt.Println("无输入")
+		}
+		if strings.HasPrefix(string(Command[:n]), "\\") {
+			TempString := string(Command[:n])
+			switch TempString {
+			case "\\1":
+				Conn.Write([]byte("请输入用户名和密码:\n"))
+				Conn.Write([]byte("用户名："))
+				TempString02 := make([]byte, 1024)
+				n1, _ := Conn.Read(TempString02)
+				rows, err := QueryUser(db)
+				if err != nil {
+					fmt.Println("查询已有用户失败，疑似发生未知错误")
+					Conn.Write([]byte("查询已有用户失败，疑似发生未知错误\n"))
+					Conn.Close()
+					return
+				}
+				for rows.Next() {
+					var stringsA string
+					rows.Scan(&stringsA)
+					fmt.Println("stringsA:" + stringsA)
+					fmt.Println("Temp Strings:" + string(TempString02[:n1]))
+					if strings.TrimSpace(stringsA) == strings.TrimSpace(string(TempString02[:n1])) {
+						n1 = 0
+						break
+					}
+				}
+				if n1 == 0 {
+					Conn.Write([]byte("用户名输入错误"))
+					tag = true
+					continue
+				} else {
+					UserName := strings.TrimSpace(string(TempString02[:n1]))
+					Conn.Write([]byte("密码："))
+					TempString03 := make([]byte, 1024)
+					n2, _ := Conn.Read(TempString03)
+					if n2 == 0 {
+						fmt.Println("密码输入为空,输入无效")
+						tag = true
+						continue
+					} else {
+						Password := strings.TrimSpace(string(TempString03[:n2]))
+						insertUser(db, UserName, Password)
+						Conn.Write([]byte("注册成功！\n"))
+						tag = true
+					}
+				}
+			case "\\2":
+				Conn.Write([]byte("请输入用户名和密码:\n"))
+				Username := make([]byte, 1024)
+				Password := make([]byte, 1024)
+				Conn.Write([]byte("用户名："))
+				Conn.Read(Username)
+				Conn.Write([]byte("密码："))
+				Conn.Read(Password)
+				rows, err := QueryUser(db)
+				if err != nil {
+					fmt.Println("查询已有用户失败，疑似发生未知错误")
+					Conn.Write([]byte("查询已有用户失败，疑似发生未知错误\n"))
+					Conn.Close()
+					return
+				}
+				for rows.Next() {
+					var stringsA, stringsB string
+					rows.Scan(&stringsA, &stringsB)
+					if stringsA == string(Username) && stringsB == string(Password) {
+						Conn.Write([]byte("账号验证成功，欢迎上线\n"))
+						Manager.AddClient(Conn, stringsA)
+						AfterLogin(Conn, db, Manager, stringsA)
+					} else {
+						Conn.Write([]byte("账号验证失败，请检查用户名和密码是否正确\n"))
+					}
+				}
+				rows.Close()
+			case "\\kodayo":
+				tag = true
+				continue
+			}
+		}
+	}
+}
+
+func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
+	Temp, _ := os.ReadFile("D:\\Code\\GoCode\\ChatRoomLittle\\提示语2.txt")
+	Conn.Write(Temp)
+	tag := false
+	for {
+		if tag == true {
+			Conn.Write(Temp)
+			tag = false
+		}
+		Words := make([]byte, 1024)
+		n, err := Conn.Read(Words)
+		if err != nil && err != io.EOF {
+			fmt.Println("读取数据失败：", err, "请重新登录")
+			Manager.RemoveClient(ID)
+			Conn.Close()
 			return
 		}
 		if n != 0 {
-			if strings.HasSuffix(string(Temp[:n]), "对方已退出连接") {
-				TargetConn.Write([]byte("对方已退出连接"))
-				Manager.RemoveClient(Conn.RemoteAddr().String())
+			TempString := string(Words[:n])
+			switch TempString {
+			case "\\1":
+				Conn.Write([]byte("请输入当前密码："))
+				NowPassword := make([]byte, 1024)
+				Conn.Read(NowPassword)
+				rows, err := QueryUser(db)
+				if err != nil {
+					fmt.Println("查询已有用户失败，疑似发生未知错误")
+					Conn.Write([]byte("查询已有用户失败，疑似发生未知错误\n"))
+					Manager.RemoveClient(ID)
+					Conn.Close()
+					return
+				}
+				for rows.Next() {
+					var stringsA, stringsB string
+					rows.Scan(&stringsA, &stringsB)
+					if stringsA == ID && stringsB == string(NowPassword) {
+						Conn.Write([]byte("请输入新密码："))
+						NewPassword := make([]byte, 1024)
+						n2, _ := Conn.Read(NewPassword)
+						if n2 == 0 {
+							Conn.Write([]byte("新密码输入错误，停止修改\n"))
+							tag = true
+							break
+						} else {
+							query := "UPDATE Client SET password = ? WHERE username = ?"
+							_, err := db.Exec(query, string(NewPassword[:n2]), ID)
+							if err != nil {
+								Conn.Write([]byte("更新密码失败，疑似发生未知错误\n"))
+								Manager.RemoveClient(ID)
+								Conn.Close()
+								return
+							}
+							Conn.Write([]byte("密码修改成功！\n"))
+							return
+						}
+					} else {
+						Conn.Write([]byte("当前密码输入错误，停止修改\n"))
+						tag = true
+						break
+					}
+				}
+				rows.Close()
+			case "\\2":
+				Conn.Write([]byte("请输入新的用户名："))
+				NewUserName := make([]byte, 1024)
+				Conn.Read(NewUserName)
+				rows, err := QueryUser(db)
+				if err != nil {
+					fmt.Println("查询已有用户失败，疑似发生未知错误")
+					Conn.Write([]byte("查询已有用户失败，疑似发生未知错误\n"))
+					Manager.RemoveClient(ID)
+					Conn.Close()
+					return
+				}
+				for rows.Next() {
+					var stringsA string
+					rows.Scan(&stringsA)
+					if stringsA == string(NewUserName) {
+						Conn.Write([]byte("用户名已存在，请重新输入\n"))
+						tag = true
+						break
+					}
+				}
+				if tag == false {
+					query := "UPDATE Client SET username = ? WHERE username = ?"
+					db.Exec(query, string(NewUserName), ID)
+					Manager.Lock.Lock()
+					TempConn := Manager.list[ID]
+					delete(Manager.list, ID)
+					Manager.list[string(NewUserName)] = TempConn
+					Manager.Lock.Unlock()
+					Conn.Write([]byte("用户名修改完成\n"))
+				}
+				rows.Close()
+			case "\\3":
+				Conn.Write([]byte("当前在线用户列表：\n"))
+				Manager.Lock.Lock()
+				for ID, _ := range Manager.list {
+					if Manager.list[ID] != nil {
+						Conn.Write([]byte(ID + "\n"))
+					}
+				}
+				Manager.Lock.Unlock()
+			case "\\4":
+			//拉黑系统应该在交流系统后再写
+			case "\\\\exit":
+				Manager.RemoveClient(ID)
 				Conn.Close()
-				Conn = nil
 				return
+			default:
+				if strings.HasPrefix(TempString, "@") {
+					Index := strings.Index(TempString, "|")
+					TargetID := TempString[1:Index]
+					TargetConn := Manager.list[TargetID]
+					if TargetConn == nil {
+						Conn.Write([]byte("用户" + TargetID + "不在线或不存在\n"))
+					} else {
+						TargetConn.Write([]byte("[" + ID + "] : " + TempString[Index+1:]))
+					}
+				} else {
+					for _, TargetConn := range Manager.list {
+						if TargetConn != nil && TargetConn != Conn {
+							TargetConn.Write([]byte("[" + ID + "] : " + TempString))
+						}
+					}
+					fmt.Println(TempString + " : " + ID)
+				}
 			}
-			Info := Conn.RemoteAddr().String() + ":" + string(Temp[:n])
-			TargetConn.Write([]byte(Info))
 		}
 	}
 }
@@ -116,6 +295,7 @@ func Receive(conn net.Conn) {
 		Message := make([]byte, 1024)
 		n, err := conn.Read(Message)
 		if err != nil && err != io.EOF {
+			fmt.Println("读取数据失败：", err)
 			return
 		}
 		if n != 0 {
@@ -127,8 +307,8 @@ func Receive(conn net.Conn) {
 func CreateTable(db *sql.DB) error {
 	query := `CREATE TABLE IF NOT EXISTS Client (
 	    id INT AUTO_INCREMENT PRIMARY KEY,
-		username VARCHAR(12) NOT NULL UNIQUE,
-		password VARCHAR(12) NOT NULL UNIQUE
+		username VARCHAR(50) NOT NULL UNIQUE,
+		password VARCHAR(50) NOT NULL UNIQUE
 	);`
 	_, err := db.Exec(query)
 	if err != nil {
@@ -137,4 +317,24 @@ func CreateTable(db *sql.DB) error {
 	}
 	fmt.Println("Table created successfully")
 	return nil
+}
+
+func insertUser(db *sql.DB, username, password string) error {
+	query := "INSERT INTO Client (username, password) VALUES (?, ?)"
+	_, err := db.Exec(query, username, password)
+	if err != nil {
+		fmt.Println("Error inserting user:", err)
+		return err
+	}
+	fmt.Println("User inserted successfully")
+	return nil
+}
+
+func QueryUser(db *sql.DB) (*sql.Rows, error) {
+	query := "SELECT username, password FROM Client"
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
