@@ -94,8 +94,8 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 					return
 				}
 				for rows.Next() {
-					var stringsA string
-					rows.Scan(&stringsA)
+					var stringsA, stringsB string
+					rows.Scan(&stringsA, &stringsB)
 					fmt.Println("stringsA:" + stringsA)
 					fmt.Println("Temp Strings:" + string(TempString02[:n1]))
 					if strings.TrimSpace(stringsA) == strings.TrimSpace(string(TempString02[:n1])) {
@@ -104,7 +104,7 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 					}
 				}
 				if n1 == 0 {
-					Conn.Write([]byte("用户名输入错误"))
+					Conn.Write([]byte("用户名输入错误\n"))
 					tag = true
 					continue
 				} else {
@@ -125,12 +125,14 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 				}
 			case "\\2":
 				Conn.Write([]byte("请输入用户名和密码:\n"))
-				Username := make([]byte, 1024)
-				Password := make([]byte, 1024)
+				username := make([]byte, 1024)
+				password := make([]byte, 1024)
 				Conn.Write([]byte("用户名："))
-				Conn.Read(Username)
+				n1, _ := Conn.Read(username)
 				Conn.Write([]byte("密码："))
-				Conn.Read(Password)
+				n2, _ := Conn.Read(password)
+				Username := strings.TrimSpace(string(username[:n1]))
+				Password := strings.TrimSpace(string(password[:n2]))
 				rows, err := QueryUser(db)
 				if err != nil {
 					fmt.Println("查询已有用户失败，疑似发生未知错误")
@@ -141,13 +143,39 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 				for rows.Next() {
 					var stringsA, stringsB string
 					rows.Scan(&stringsA, &stringsB)
-					if stringsA == string(Username) && stringsB == string(Password) {
+					if strings.TrimSpace(stringsA) == Username && strings.TrimSpace(stringsB) == Password {
 						Conn.Write([]byte("账号验证成功，欢迎上线\n"))
 						Manager.AddClient(Conn, stringsA)
 						AfterLogin(Conn, db, Manager, stringsA)
 					} else {
 						Conn.Write([]byte("账号验证失败，请检查用户名和密码是否正确\n"))
+						fmt.Println("stringsA : " + strings.TrimSpace(stringsA))
+						fmt.Println("Username : " + Username)
+						fmt.Println(len(stringsA), len(Username))
+						if stringsA == string(Username) {
+							fmt.Println("账号匹配正确")
+						} else {
+							fmt.Println("账号匹配错误")
+						}
 					}
+				}
+				rows.Close()
+			case "\\3":
+				rows, _ := QueryUser(db)
+				for rows.Next() {
+					var stringsA, stringsB string
+					rows.Scan(&stringsA, &stringsB)
+					Conn.Write([]byte("用户名：" + stringsA + " 密码：" + stringsB + "\n"))
+				}
+				for rows.Next() {
+					var stringsA string
+					rows.Scan(&stringsA)
+					Conn.Write([]byte("用户名：" + stringsA + "\n"))
+				}
+				for rows.Next() {
+					var stringsB string
+					rows.Scan(&stringsB)
+					Conn.Write([]byte("密码：" + stringsB + "\n"))
 				}
 				rows.Close()
 			case "\\kodayo":
@@ -275,7 +303,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 					if TargetConn == nil {
 						Conn.Write([]byte("用户" + TargetID + "不在线或不存在\n"))
 					} else {
-						TargetConn.Write([]byte("[" + ID + "] : " + TempString[Index+1:]))
+						TargetConn.Write([]byte("私信： [" + ID + "] : " + TempString[Index+1:]))
 					}
 				} else {
 					for _, TargetConn := range Manager.list {
@@ -283,7 +311,6 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 							TargetConn.Write([]byte("[" + ID + "] : " + TempString))
 						}
 					}
-					fmt.Println(TempString + " : " + ID)
 				}
 			}
 		}
