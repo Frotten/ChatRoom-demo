@@ -18,6 +18,8 @@ type ClientManager struct {
 	OnlineUsers int
 }
 
+var connlock sync.Mutex
+
 func CreateClientManager() *ClientManager {
 	return &ClientManager{
 		list: make(map[string]net.Conn),
@@ -86,23 +88,6 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 				Conn.Write([]byte("用户名："))
 				TempString02 := make([]byte, 1024)
 				n1, _ := Conn.Read(TempString02)
-				rows, err := QueryUser(db)
-				if err != nil {
-					fmt.Println("查询已有用户失败，疑似发生未知错误")
-					Conn.Write([]byte("查询已有用户失败，疑似发生未知错误\n"))
-					Conn.Close()
-					return
-				}
-				for rows.Next() {
-					var stringsA, stringsB string
-					rows.Scan(&stringsA, &stringsB)
-					fmt.Println("stringsA:" + stringsA)
-					fmt.Println("Temp Strings:" + string(TempString02[:n1]))
-					if strings.TrimSpace(stringsA) == strings.TrimSpace(string(TempString02[:n1])) {
-						n1 = 0
-						break
-					}
-				}
 				if n1 == 0 {
 					Conn.Write([]byte("用户名输入错误\n"))
 					tag = true
@@ -118,7 +103,11 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 						continue
 					} else {
 						Password := strings.TrimSpace(string(TempString03[:n2]))
-						insertUser(db, UserName, Password)
+						err = insertUser(db, UserName, Password)
+						if err != nil {
+							Conn.Write([]byte("注册新用户失败，该用户名已存在\n"))
+							continue
+						}
 						Conn.Write([]byte("注册成功！\n"))
 						tag = true
 					}
@@ -155,9 +144,14 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 					Conn.Write([]byte("账号验证失败，请重新输入\n"))
 				}
 				rows.Close()
+			case "\\4":
+			case "\\5":
+				Conn.Write([]byte("错误：尚未登陆\\\\"))
 			case "\\kodayo":
 				tag = true
 				continue
+			default:
+				Conn.Write([]byte("请先登录"))
 			}
 		}
 	}
@@ -266,7 +260,87 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 				}
 				Manager.Lock.Unlock()
 			case "\\4":
-
+				err := os.Mkdir("D:\\TryDir\\TempCopy", 0777)
+				if err != nil && !os.IsExist(err) {
+					Conn.Write([]byte("创建目录失败，请检查权限或路径是否正确\n"))
+					continue
+				}
+				Conn.Write([]byte("请输入文件绝对路径:\\\\"))
+				TempInfo := make([]byte, 1024)
+				n1, _ := Conn.Read(TempInfo)
+				Finger := strings.Index(string(TempInfo[:n1]), "|")
+				Size, _ := strconv.Atoi(string(TempInfo[:Finger]))
+				Filename := string(TempInfo[Finger+1 : n1])
+				file01, _ := os.OpenFile("D:\\TryDir\\TempCopy\\"+Filename, os.O_CREATE|os.O_RDWR, os.ModePerm)
+				Temp := make([]byte, 1024)
+				fmt.Println("size:", Size)
+				for {
+					n2, err := Conn.Read(Temp)
+					Size -= n2
+					if err != nil || n2 == 0 || Size <= 0 {
+						if err == io.EOF || n2 == 0 || Size <= 0 {
+							fmt.Println("文件传输结束")
+							file01.Close()
+							for _, TargetConn := range Manager.list {
+								if TargetConn != nil {
+									TargetConn.Write([]byte("[" + ID + "] 上传了名为：" + Filename + "的文件"))
+								}
+							}
+							break
+						} else {
+							fmt.Println("读取文件失败:", err)
+							file01.Close()
+							Conn.Write([]byte("读取文件失败\n"))
+							break
+						}
+					}
+					if n2 > 0 {
+						file01.Write(Temp[:n2])
+					}
+				}
+			case "\\5":
+				BasicLocation := "D:\\TryDir\\TempCopy"
+				DirEntry, err := os.ReadDir(BasicLocation)
+				if err != nil {
+					Conn.Write([]byte("读取目录失败，请检查权限或路径是否正确\n"))
+					continue
+				}
+				mp1 := make(map[int]string)
+				for id, entry := range DirEntry {
+					Conn.Write([]byte(strconv.Itoa(id) + " : " + entry.Name() + "\n"))
+					mp1[id] = entry.Name()
+				}
+				if len(mp1) == 0 {
+					Conn.Write([]byte("暂无可下载文件"))
+					continue
+				}
+				Conn.Write([]byte("请输入要下载的文件编号：\\\\"))
+				Temp := make([]byte, 1024)
+				n1, _ := Conn.Read(Temp)
+				Index, err := strconv.Atoi(string(Temp[:n1]))
+				TargetName := BasicLocation + "\\" + mp1[Index] //这里要把数据传输到客户端上
+				file01, _ := os.Open(TargetName)
+				fileinfo, _ := file01.Stat()
+				Conn.Write([]byte("[[即将开始传输文件]]"))
+				Conn.Write([]byte(strconv.Itoa(int(fileinfo.Size())) + "|" + fileinfo.Name()))
+				Temp02 := make([]byte, 1024)
+				for {
+					n2, err := file01.Read(Temp02)
+					if err != nil {
+						if err == io.EOF || n2 == 0 {
+							file01.Close()
+							break
+						} else {
+							fmt.Println("读取文件失败:", err)
+							file01.Close()
+							Conn.Write([]byte("读取文件失败\n"))
+							break
+						}
+					}
+					if n2 > 0 {
+						Conn.Write(Temp02[:n2])
+					}
+				}
 			case "\\\\exit":
 				Manager.RemoveClient(ID)
 				Conn.Close()
@@ -293,7 +367,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 	}
 }
 
-func Receive(conn net.Conn) {
+func Receive(conn net.Conn, ch1 chan int) {
 	for {
 		Message := make([]byte, 1024)
 		n, err := conn.Read(Message)
@@ -302,7 +376,40 @@ func Receive(conn net.Conn) {
 			return
 		}
 		if n != 0 {
-			fmt.Println(string(Message[:n]))
+			if string(Message[:n]) == "错误：尚未登陆\\\\" {
+				ch1 <- 1
+				fmt.Println("请先登录")
+			} else if string(Message[:n]) == "请输入文件绝对路径:\\\\" {
+				ch1 <- 2
+				fmt.Println("请输入文件路径：")
+			} else if string(Message[:n]) == "请输入要下载的文件编号：\\\\" {
+				ch1 <- 3
+				fmt.Println("请输入要下载的文件编号：")
+			} else if string(Message[:n]) == "[[即将开始传输文件]]" {
+				n, _ = conn.Read(Message)
+				Ans := string(Message[:n])
+				Finger := strings.Index(string(Ans), "|")
+				Size, _ := strconv.Atoi(string(Ans[:Finger]))
+				Title := string(Ans[Finger+1 : n])
+				file01, _ := os.OpenFile("D:\\TryDir\\TempDownload\\"+Title, os.O_CREATE|os.O_RDWR, os.ModePerm)
+				Temp := make([]byte, 1024)
+				for {
+					n1, err := conn.Read(Temp)
+					Size -= n1
+					if err != nil || n1 == 0 || Size <= 0 {
+						if err == io.EOF || n1 == 0 || Size <= 0 {
+							fmt.Println("文件传输结束")
+							file01.Close()
+							break
+						}
+					}
+					if n1 > 0 {
+						file01.Write(Temp[:n1])
+					}
+				}
+			} else {
+				fmt.Println(string(Message[:n]))
+			}
 		}
 	}
 }
