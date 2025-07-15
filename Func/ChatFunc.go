@@ -31,7 +31,7 @@ func (man *ClientManager) AddClient(Conn net.Conn, UserName string) {
 	man.OnlineUsers++
 	for _, Conn := range man.list {
 		if Conn != nil {
-			Conn.Write([]byte("用户" + UserName + "已上线,当前在线人数：" + strconv.Itoa(man.OnlineUsers)))
+			Conn.Write([]byte("用户" + UserName + "已上线,当前在线人数：" + strconv.Itoa(man.OnlineUsers) + "\n"))
 		}
 	}
 }
@@ -43,7 +43,7 @@ func (man *ClientManager) RemoveClient(IP string) {
 	man.OnlineUsers--
 	for _, Conn := range man.list {
 		if Conn != nil {
-			Conn.Write([]byte("用户" + IP + "已下线,当前在线人数：" + strconv.Itoa(man.OnlineUsers)))
+			Conn.Write([]byte("用户" + IP + "已下线,当前在线人数：" + strconv.Itoa(man.OnlineUsers) + "\n"))
 		}
 	}
 }
@@ -140,6 +140,7 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 					Conn.Close()
 					return
 				}
+				flag := false
 				for rows.Next() {
 					var stringsA, stringsB string
 					rows.Scan(&stringsA, &stringsB)
@@ -147,35 +148,11 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 						Conn.Write([]byte("账号验证成功，欢迎上线\n"))
 						Manager.AddClient(Conn, stringsA)
 						AfterLogin(Conn, db, Manager, stringsA)
-					} else {
-						Conn.Write([]byte("账号验证失败，请检查用户名和密码是否正确\n"))
-						fmt.Println("stringsA : " + strings.TrimSpace(stringsA))
-						fmt.Println("Username : " + Username)
-						fmt.Println(len(stringsA), len(Username))
-						if stringsA == string(Username) {
-							fmt.Println("账号匹配正确")
-						} else {
-							fmt.Println("账号匹配错误")
-						}
+						flag = true
 					}
 				}
-				rows.Close()
-			case "\\3":
-				rows, _ := QueryUser(db)
-				for rows.Next() {
-					var stringsA, stringsB string
-					rows.Scan(&stringsA, &stringsB)
-					Conn.Write([]byte("用户名：" + stringsA + " 密码：" + stringsB + "\n"))
-				}
-				for rows.Next() {
-					var stringsA string
-					rows.Scan(&stringsA)
-					Conn.Write([]byte("用户名：" + stringsA + "\n"))
-				}
-				for rows.Next() {
-					var stringsB string
-					rows.Scan(&stringsB)
-					Conn.Write([]byte("密码：" + stringsB + "\n"))
+				if flag == false {
+					Conn.Write([]byte("账号验证失败，请重新输入\n"))
 				}
 				rows.Close()
 			case "\\kodayo":
@@ -209,7 +186,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 			case "\\1":
 				Conn.Write([]byte("请输入当前密码："))
 				NowPassword := make([]byte, 1024)
-				Conn.Read(NowPassword)
+				n1, _ := Conn.Read(NowPassword)
 				rows, err := QueryUser(db)
 				if err != nil {
 					fmt.Println("查询已有用户失败，疑似发生未知错误")
@@ -221,7 +198,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 				for rows.Next() {
 					var stringsA, stringsB string
 					rows.Scan(&stringsA, &stringsB)
-					if stringsA == ID && stringsB == string(NowPassword) {
+					if stringsA == ID && stringsB == string(NowPassword[:n1]) {
 						Conn.Write([]byte("请输入新密码："))
 						NewPassword := make([]byte, 1024)
 						n2, _ := Conn.Read(NewPassword)
@@ -238,20 +215,18 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 								Conn.Close()
 								return
 							}
-							Conn.Write([]byte("密码修改成功！\n"))
+							Conn.Write([]byte("密码修改成功！,即将重新进入登陆界面\n"))
 							return
 						}
-					} else {
-						Conn.Write([]byte("当前密码输入错误，停止修改\n"))
-						tag = true
-						break
 					}
 				}
+				Conn.Write([]byte("当前密码输入错误，停止修改\n"))
+				tag = true
 				rows.Close()
 			case "\\2":
 				Conn.Write([]byte("请输入新的用户名："))
 				NewUserName := make([]byte, 1024)
-				Conn.Read(NewUserName)
+				n1, _ := Conn.Read(NewUserName)
 				rows, err := QueryUser(db)
 				if err != nil {
 					fmt.Println("查询已有用户失败，疑似发生未知错误")
@@ -261,9 +236,9 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 					return
 				}
 				for rows.Next() {
-					var stringsA string
-					rows.Scan(&stringsA)
-					if stringsA == string(NewUserName) {
+					var stringsA, stringsB string
+					rows.Scan(&stringsA, &stringsB)
+					if stringsA == string(NewUserName[:n1]) {
 						Conn.Write([]byte("用户名已存在，请重新输入\n"))
 						tag = true
 						break
@@ -271,11 +246,12 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 				}
 				if tag == false {
 					query := "UPDATE Client SET username = ? WHERE username = ?"
-					db.Exec(query, string(NewUserName), ID)
+					db.Exec(query, string(NewUserName[:n1]), ID)
 					Manager.Lock.Lock()
 					TempConn := Manager.list[ID]
+					Manager.list[ID] = nil
 					delete(Manager.list, ID)
-					Manager.list[string(NewUserName)] = TempConn
+					Manager.list[string(NewUserName[:n1])] = TempConn
 					Manager.Lock.Unlock()
 					Conn.Write([]byte("用户名修改完成\n"))
 				}
@@ -290,7 +266,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 				}
 				Manager.Lock.Unlock()
 			case "\\4":
-			//拉黑系统应该在交流系统后再写
+
 			case "\\\\exit":
 				Manager.RemoveClient(ID)
 				Conn.Close()
@@ -335,7 +311,7 @@ func CreateTable(db *sql.DB) error {
 	query := `CREATE TABLE IF NOT EXISTS Client (
 	    id INT AUTO_INCREMENT PRIMARY KEY,
 		username VARCHAR(50) NOT NULL UNIQUE,
-		password VARCHAR(50) NOT NULL UNIQUE
+		password VARCHAR(50) NOT NULL
 	);`
 	_, err := db.Exec(query)
 	if err != nil {
