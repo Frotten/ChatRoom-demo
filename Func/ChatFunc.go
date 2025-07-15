@@ -134,6 +134,11 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 					var stringsA, stringsB string
 					rows.Scan(&stringsA, &stringsB)
 					if strings.TrimSpace(stringsA) == Username && strings.TrimSpace(stringsB) == Password {
+						if Manager.list[Username] != nil {
+							Conn.Write([]byte("账号已在线，请勿重复登录\n"))
+							flag = true
+							break
+						}
 						Conn.Write([]byte("账号验证成功，欢迎上线\n"))
 						Manager.AddClient(Conn, stringsA)
 						AfterLogin(Conn, db, Manager, stringsA)
