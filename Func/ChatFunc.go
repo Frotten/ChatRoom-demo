@@ -136,12 +136,14 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 					if strings.TrimSpace(stringsA) == Username && strings.TrimSpace(stringsB) == Password {
 						if Manager.list[Username] != nil {
 							Conn.Write([]byte("账号已在线，请勿重复登录\n"))
+							tag = true
 							flag = true
 							break
 						}
 						Conn.Write([]byte("账号验证成功，欢迎上线\n"))
 						Manager.AddClient(Conn, stringsA)
 						AfterLogin(Conn, db, Manager, stringsA)
+						tag = true
 						flag = true
 					}
 				}
@@ -215,6 +217,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 								return
 							}
 							Conn.Write([]byte("密码修改成功！,即将重新进入登陆界面\n"))
+							Manager.RemoveClient(ID)
 							return
 						}
 					}
