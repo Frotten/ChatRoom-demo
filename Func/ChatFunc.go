@@ -1,6 +1,7 @@
 package Func
 
 import (
+	"crypto/md5"
 	"database/sql"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
@@ -17,8 +18,6 @@ type ClientManager struct {
 	Lock        sync.Mutex
 	OnlineUsers int
 }
-
-var connlock sync.Mutex
 
 func CreateClientManager() *ClientManager {
 	return &ClientManager{
@@ -105,7 +104,7 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 						Password := strings.TrimSpace(string(TempString03[:n2]))
 						err = insertUser(db, UserName, Password)
 						if err != nil {
-							Conn.Write([]byte("注册新用户失败，该用户名已存在\n"))
+							Conn.Write([]byte("注册新用户失败，可能是该用户名已存在\n"))
 							continue
 						}
 						Conn.Write([]byte("注册成功！\n"))
@@ -122,6 +121,7 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 				n2, _ := Conn.Read(password)
 				Username := strings.TrimSpace(string(username[:n1]))
 				Password := strings.TrimSpace(string(password[:n2]))
+				Password, _ = Md5(Password)
 				rows, err := QueryUser(db)
 				if err != nil {
 					fmt.Println("查询已有用户失败，疑似发生未知错误")
@@ -188,6 +188,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 				Conn.Write([]byte("请输入当前密码："))
 				NowPassword := make([]byte, 1024)
 				n1, _ := Conn.Read(NowPassword)
+				Now, _ := Md5(string(NowPassword[:n1]))
 				rows, err := QueryUser(db)
 				if err != nil {
 					fmt.Println("查询已有用户失败，疑似发生未知错误")
@@ -199,7 +200,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 				for rows.Next() {
 					var stringsA, stringsB string
 					rows.Scan(&stringsA, &stringsB)
-					if stringsA == ID && stringsB == string(NowPassword[:n1]) {
+					if stringsA == ID && stringsB == Now {
 						Conn.Write([]byte("请输入新密码："))
 						NewPassword := make([]byte, 1024)
 						n2, _ := Conn.Read(NewPassword)
@@ -209,7 +210,8 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 							break
 						} else {
 							query := "UPDATE Client SET password = ? WHERE username = ?"
-							_, err := db.Exec(query, string(NewPassword[:n2]), ID)
+							New, _ := Md5(string(NewPassword[:n2]))
+							_, err := db.Exec(query, New, ID)
 							if err != nil {
 								Conn.Write([]byte("更新密码失败，疑似发生未知错误\n"))
 								Manager.RemoveClient(ID)
@@ -268,7 +270,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 				}
 				Manager.Lock.Unlock()
 			case "\\4":
-				err := os.Mkdir("D:\\TryDir\\TempCopy", 0777)
+				err := os.MkdirAll("D:\\TryDir\\TempCopy", 0777)
 				if err != nil && !os.IsExist(err) {
 					Conn.Write([]byte("创建目录失败，请检查权限或路径是否正确\n"))
 					continue
@@ -442,6 +444,8 @@ func CreateTable(db *sql.DB) error {
 
 func insertUser(db *sql.DB, username, password string) error {
 	query := "INSERT INTO Client (username, password) VALUES (?, ?)"
+	password, _ = Md5(password)
+	fmt.Println("Password:", password)
 	_, err := db.Exec(query, username, password)
 	if err != nil {
 		fmt.Println("Error inserting user:", err)
@@ -458,4 +462,14 @@ func QueryUser(db *sql.DB) (*sql.Rows, error) {
 		return nil, err
 	}
 	return rows, nil
+}
+
+func Md5(message string) (string, error) {
+	m := md5.New()
+	_, err := io.WriteString(m, message)
+	if err != nil {
+		return "", err
+	}
+	arr := m.Sum(nil)
+	return fmt.Sprintf("%x", arr), nil
 }
