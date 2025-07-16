@@ -164,11 +164,15 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 	}
 }
 
-func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
+func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 	Temp, _ := os.ReadFile("D:\\Code\\GoCode\\ChatRoomLittle\\提示语2.txt")
 	Conn.Write(Temp)
 	tag := false
+	ID := PID
 	for {
+		if Conn == nil || Manager.list[ID] == nil {
+			Manager.RemoveClient(ID)
+		}
 		if tag == true {
 			Conn.Write(Temp)
 			tag = false
@@ -258,6 +262,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 					Manager.list[string(NewUserName[:n1])] = TempConn
 					Manager.Lock.Unlock()
 					Conn.Write([]byte("用户名修改完成\n"))
+					ID = string(NewUserName[:n1])
 				}
 				rows.Close()
 			case "\\3":
