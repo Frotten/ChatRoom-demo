@@ -346,6 +346,9 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, ID string) {
 						Conn.Write(Temp02[:n2])
 					}
 				}
+			case "\\kodayo":
+				tag = true
+				continue
 			case "\\\\exit":
 				Manager.RemoveClient(ID)
 				Conn.Close()
