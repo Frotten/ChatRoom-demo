@@ -266,7 +266,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 				}
 				rows.Close()
 			case "\\3":
-				Conn.Write([]byte("当前在线用户列表：\n"))
+				Conn.Write([]byte("当前在线用户列表："))
 				Manager.Lock.Lock()
 				for ID, _ := range Manager.list {
 					if Manager.list[ID] != nil {
@@ -356,6 +356,20 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 						Conn.Write(Temp02[:n2])
 					}
 				}
+			case "\\7":
+				Conn.Write([]byte("当前黑名单列表："))
+				query := fmt.Sprintf("SELECT Personnel FROM `%s`", ID)
+				Manager.Lock.Lock()
+				rows, _ := db.Query(query)
+				for rows.Next() {
+					var Personnel int
+					var PersonnelName string
+					rows.Scan(&Personnel)
+					idquery := `SELECT username FROM Client WHERE id = ?`
+					db.QueryRow(idquery, Personnel).Scan(&PersonnelName)
+					Conn.Write([]byte(PersonnelName))
+				}
+				Manager.Lock.Unlock()
 			case "\\kodayo":
 				tag = true
 				continue
@@ -371,12 +385,97 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 					if TargetConn == nil {
 						Conn.Write([]byte("用户" + TargetID + "不在线或不存在\n"))
 					} else {
-						TargetConn.Write([]byte("私信： [" + ID + "] : " + TempString[Index+1:]))
+						query := fmt.Sprintf("SELECT Personnel FROM `%s`", TargetID)
+						rows, _ := db.Query(query)
+						AllowSympol := true
+						for rows.Next() {
+							var Personnel int
+							rows.Scan(&Personnel)
+							IDquery := `SELECT username FROM Client WHERE id = ?`
+							var BlackName string
+							db.QueryRow(IDquery, Personnel).Scan(&BlackName)
+							if BlackName == ID {
+								AllowSympol = false
+								break
+							}
+						}
+						if AllowSympol == true {
+							TargetConn.Write([]byte("私信： [" + ID + "] : " + TempString[Index+1:]))
+						}
+					}
+				} else if strings.HasPrefix(TempString, "\\6") {
+					Index := strings.Index(TempString, " ")
+					if Index == -1 {
+						Conn.Write([]byte("黑名单添加格式错误，请确保指令与用户名之间留有空格"))
+						continue
+					}
+					TargetID := strings.TrimSpace(TempString[Index+1:])
+					Manager.Lock.Lock()
+					query := `SELECT id,username FROM Client WHERE username = ?`
+					rows, err := db.Query(query, TargetID)
+					if err != nil {
+						Conn.Write([]byte("查询用户失败，疑似发生未知错误"))
+						fmt.Println("数据库访问失败")
+						Manager.Lock.Unlock()
+						rows.Close()
+						Conn.Close()
+						return
+					}
+					if rows.Next() {
+						var username string
+						var id int
+						rows.Scan(&id, &username)
+						if username == ID {
+							Conn.Write([]byte("不能将自己加入黑名单\n"))
+							continue
+						} else {
+							blacklist := fmt.Sprintf("INSERT INTO `%s` (Personnel) VALUES (?)", ID)
+							_, _ = db.Exec(blacklist, id)
+							Conn.Write([]byte("用户 " + TargetID + " 已加入黑名单"))
+						}
+					}
+					rows.Close()
+					Manager.Lock.Unlock()
+				} else if strings.HasPrefix(TempString, "\\8") {
+					Index := strings.Index(TempString, " ")
+					if Index == -1 {
+						Conn.Write([]byte("黑名单删除格式错误，请确保指令与用户名之间留有空格"))
+						continue
+					}
+					TargetID := strings.TrimSpace(TempString[Index+1:])
+					var TargetNum int
+					Manager.Lock.Lock()
+					IDquery := `SELECT id FROM client WHERE username = ?`
+					db.QueryRow(IDquery, TargetID).Scan(&TargetNum)
+					query := fmt.Sprintf("DELETE FROM `%s` WHERE Personnel = ?", ID)
+					result, _ := db.Exec(query, TargetNum)
+					Manager.Lock.Unlock()
+					rowAffect, _ := result.RowsAffected()
+					if rowAffect > 0 {
+						Conn.Write([]byte("用户 " + TargetID + " 已从黑名单中删除"))
+					} else {
+						Conn.Write([]byte("用户 " + TargetID + " 不在黑名单中，删除失败"))
 					}
 				} else {
-					for _, TargetConn := range Manager.list {
+					for name, TargetConn := range Manager.list {
 						if TargetConn != nil && TargetConn != Conn {
-							TargetConn.Write([]byte("[" + ID + "] : " + TempString))
+							query := fmt.Sprintf("SELECT Personnel FROM `%s`", name)
+							rows, _ := db.Query(query)
+							AllowSympol := true
+							for rows.Next() {
+								var Personnel int
+								rows.Scan(&Personnel)
+								IDquery := `SELECT username FROM Client WHERE id = ?`
+								var BlackName string
+								db.QueryRow(IDquery, Personnel).Scan(&BlackName)
+								if BlackName == ID {
+									AllowSympol = false
+									break
+								}
+							}
+							if AllowSympol == true {
+								TargetConn.Write([]byte("[" + ID + "] : " + TempString))
+							}
 						}
 					}
 				}
@@ -454,6 +553,12 @@ func insertUser(db *sql.DB, username, password string) error {
 	_, err := db.Exec(query, username, password)
 	if err != nil {
 		fmt.Println("Error inserting user:", err)
+		return err
+	}
+	create := fmt.Sprintf("CREATE TABLE IF NOT EXISTS `%s` (id INT AUTO_INCREMENT PRIMARY KEY, Personnel INT NOT NULL)", username)
+	_, err = db.Exec(create)
+	if err != nil {
+		fmt.Println("Error creating table:", err)
 		return err
 	}
 	fmt.Println("User inserted successfully")
