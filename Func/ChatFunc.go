@@ -261,16 +261,18 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 					delete(Manager.list, ID)
 					Manager.list[string(NewUserName[:n1])] = TempConn
 					Manager.Lock.Unlock()
-					Conn.Write([]byte("用户名修改完成\n"))
+					RenameQuery := fmt.Sprintf("ALTER TABLE `%s` RENAME TO `%s`", ID, string(NewUserName[:n1]))
+					_, _ = db.Exec(RenameQuery)
+					_, _ = Conn.Write([]byte("用户名修改完成\n"))
 					ID = string(NewUserName[:n1])
 				}
-				rows.Close()
+				_ = rows.Close()
 			case "\\3":
-				Conn.Write([]byte("当前在线用户列表："))
+				_, _ = Conn.Write([]byte("当前在线用户列表："))
 				Manager.Lock.Lock()
 				for ID, _ := range Manager.list {
 					if Manager.list[ID] != nil {
-						Conn.Write([]byte(ID + "\n"))
+						_, _ = Conn.Write([]byte(ID + "\n"))
 					}
 				}
 				Manager.Lock.Unlock()
@@ -385,15 +387,19 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 					if TargetConn == nil {
 						Conn.Write([]byte("用户" + TargetID + "不在线或不存在\n"))
 					} else {
+						fmt.Println("TAG01")
 						query := fmt.Sprintf("SELECT Personnel FROM `%s`", TargetID)
 						rows, _ := db.Query(query)
+						fmt.Println("TAG02")
 						AllowSympol := true
 						for rows.Next() {
 							var Personnel int
 							rows.Scan(&Personnel)
+							fmt.Println("TAG03")
 							IDquery := `SELECT username FROM Client WHERE id = ?`
 							var BlackName string
 							db.QueryRow(IDquery, Personnel).Scan(&BlackName)
+							fmt.Println("TAG04")
 							if BlackName == ID {
 								AllowSympol = false
 								break
