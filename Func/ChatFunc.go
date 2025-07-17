@@ -328,7 +328,13 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 					mp1[id] = entry.Name()
 				}
 				if len(mp1) == 0 {
-					_, _ = Conn.Write([]byte("暂无可下载文件"))
+					_, err = Conn.Write([]byte("暂无可下载文件"))
+					if err != nil {
+						fmt.Println("发送数据失败:", err)
+						_ = Conn.Close()
+						return
+					}
+					_, _ = Conn.Write([]byte("暂无文件在BasicLocation中，请等待添加文件后在进行下载\\\\"))
 					continue
 				}
 				_, _ = Conn.Write([]byte("请输入要下载的文件编号：\\\\"))
@@ -391,19 +397,15 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 					if TargetConn == nil {
 						_, _ = Conn.Write([]byte("用户" + TargetID + "不在线或不存在\n"))
 					} else {
-						fmt.Println("TAG01")
 						query := fmt.Sprintf("SELECT Personnel FROM `%s`", TargetID)
 						rows, _ := db.Query(query)
-						fmt.Println("TAG02")
 						AllowSympol := true
 						for rows.Next() {
 							var Personnel int
 							_ = rows.Scan(&Personnel)
-							fmt.Println("TAG03")
 							IDquery := `SELECT username FROM Client WHERE id = ?`
 							var BlackName string
 							_ = db.QueryRow(IDquery, Personnel).Scan(&BlackName)
-							fmt.Println("TAG04")
 							if BlackName == ID {
 								AllowSympol = false
 								break
@@ -512,6 +514,8 @@ func Receive(conn net.Conn, ch1 chan int) {
 			} else if string(Message[:n]) == "请输入要下载的文件编号：\\\\" {
 				ch1 <- 3
 				fmt.Println("请输入要下载的文件编号：")
+			} else if string(Message[:n]) == "暂无文件在BasicLocation中，请等待添加文件后在进行下载\\\\" {
+				ch1 <- 4
 			} else if string(Message[:n]) == "[[即将开始传输文件]]" {
 				n, _ = conn.Read(Message)
 				Ans := string(Message[:n])
