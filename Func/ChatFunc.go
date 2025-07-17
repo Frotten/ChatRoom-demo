@@ -382,6 +382,10 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 			default:
 				if strings.HasPrefix(TempString, "@") {
 					Index := strings.Index(TempString, "|")
+					if Index == -1 {
+						_, _ = Conn.Write([]byte("私信格式错误，请确保指令格式正确"))
+						continue
+					}
 					TargetID := strings.TrimSpace(TempString[1:Index])
 					TargetConn := Manager.list[TargetID]
 					if TargetConn == nil {
