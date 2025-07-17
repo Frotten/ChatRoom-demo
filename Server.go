@@ -16,7 +16,7 @@ func main() {
 	}
 	defer listener.Close()
 	Manager := Func.CreateClientManager()
-	db, err := sql.Open("mysql", "Cheter:1234@tcp(192.168.56.1:3306)/ChatRoom?charset=utf8")
+	db, err := sql.Open("mysql", "Cheter:1234@tcp(192.168.56.1:3306)/ChatRoom")
 	if err != nil {
 		db.Close()
 		log.Fatal("Database connection error:", err)

@@ -380,7 +380,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 			default:
 				if strings.HasPrefix(TempString, "@") {
 					Index := strings.Index(TempString, "|")
-					TargetID := TempString[1:Index]
+					TargetID := strings.TrimSpace(TempString[1:Index])
 					TargetConn := Manager.list[TargetID]
 					if TargetConn == nil {
 						Conn.Write([]byte("用户" + TargetID + "不在线或不存在\n"))
@@ -505,9 +505,9 @@ func Receive(conn net.Conn, ch1 chan int) {
 			} else if string(Message[:n]) == "[[即将开始传输文件]]" {
 				n, _ = conn.Read(Message)
 				Ans := string(Message[:n])
-				Finger := strings.Index(string(Ans), "|")
-				Size, _ := strconv.Atoi(string(Ans[:Finger]))
-				Title := string(Ans[Finger+1 : n])
+				Finger := strings.Index(Ans, "|")
+				Size, _ := strconv.Atoi(Ans[:Finger])
+				Title := Ans[Finger+1 : n]
 				file01, _ := os.OpenFile("D:\\TryDir\\TempDownload\\"+Title, os.O_CREATE|os.O_RDWR, os.ModePerm)
 				Temp := make([]byte, 1024)
 				for {
