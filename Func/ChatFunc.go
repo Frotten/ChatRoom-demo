@@ -341,8 +341,16 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 				Temp := make([]byte, 1024)
 				n1, _ := Conn.Read(Temp)
 				Index, err := strconv.Atoi(string(Temp[:n1]))
+				if mp1[Index] == "" || err != nil {
+					Conn.Write([]byte("错误标签，请确保输入的编号正确"))
+					continue
+				}
 				TargetName := BasicLocation + "\\" + mp1[Index] //这里要把数据传输到客户端上
-				file01, _ := os.Open(TargetName)
+				file01, err := os.Open(TargetName)
+				if err != nil {
+					fmt.Println("打开文件失败:", err)
+					continue
+				}
 				fileinfo, _ := file01.Stat()
 				_, _ = Conn.Write([]byte("[[即将开始传输文件]]"))
 				_, _ = Conn.Write([]byte(strconv.Itoa(int(fileinfo.Size())) + "|" + fileinfo.Name()))
