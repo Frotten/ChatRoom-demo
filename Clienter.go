@@ -10,21 +10,35 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
-	Conn, err := net.Dial("tcp", "192.168.1.106:8080")
+	Conn, err := net.Dial("tcp", "192.168.56.1:8080")
+	Starttime := time.Now()
+	th := make(chan time.Time)
+	end := make(chan bool)
+	defer close(end)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer Conn.Close()
 	ch1 := make(chan int)
+	go Func.TimeOut(Conn, th, end, Starttime)
 	go Func.Receive(Conn, ch1)
 	for {
+		if Conn == nil || th == nil {
+			fmt.Println("连接已断开")
+			break
+		}
 		Reader := bufio.NewReader(os.Stdin)
 		Temp, err := Reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error Reading")
+			break
+		}
+		if Conn == nil || th == nil {
+			fmt.Println("连接已断开")
 			break
 		}
 		Temp = strings.TrimSpace(Temp)
@@ -98,6 +112,12 @@ func main() {
 			}
 		} else {
 			Conn.Write([]byte(Temp))
+		}
+		select {
+		case th <- time.Now():
+		case <-end:
+			fmt.Println("连接已断开")
+			return
 		}
 	}
 }

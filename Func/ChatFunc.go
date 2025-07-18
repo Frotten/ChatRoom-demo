@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type ClientManager struct {
@@ -172,6 +173,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 	for {
 		if Conn == nil || Manager.list[ID] == nil {
 			Manager.RemoveClient(ID)
+			return
 		}
 		if tag == true {
 			_, _ = Conn.Write(Temp)
@@ -553,6 +555,23 @@ func Receive(conn net.Conn, ch1 chan int) {
 	}
 }
 
+func TimeOut(Conn net.Conn, th1 chan time.Time, end chan bool, StartTime time.Time) {
+	NowTime := StartTime
+	for {
+		select {
+		case NewTime := <-th1:
+			NowTime = NewTime
+		default:
+			if time.Since(NowTime).Seconds() > 10 {
+				fmt.Println("待机超时，已自动退出")
+				_ = Conn.Close()
+				end <- true
+				close(th1)
+				return
+			}
+		}
+	}
+}
 func CreateTable(db *sql.DB) error {
 	query := `CREATE TABLE IF NOT EXISTS Client (
 	    id INT AUTO_INCREMENT PRIMARY KEY,
