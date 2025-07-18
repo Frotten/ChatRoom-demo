@@ -562,7 +562,7 @@ func TimeOut(Conn net.Conn, th1 chan time.Time, end chan bool, StartTime time.Ti
 		case NewTime := <-th1:
 			NowTime = NewTime
 		default:
-			if time.Since(NowTime).Seconds() > 10 {
+			if time.Since(NowTime).Seconds() > 300 {
 				fmt.Println("待机超时，已自动退出")
 				_ = Conn.Close()
 				end <- true
