@@ -10,13 +10,13 @@ import (
 )
 
 func main() {
-	listener, err := net.Listen("tcp", "0.0.0.0:8080")
+	listener, err := net.Listen("tcp", "192.168.56.1:8080")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer listener.Close()
 	Manager := Func.CreateClientManager()
-	db, err := sql.Open("mysql", "Cheter:1234@tcp(192.168.1.108:3306)/ChatRoom")
+	db, err := sql.Open("mysql", "Cheter:1234@tcp(192.168.56.1:3306)/ChatRoom")
 	if err != nil {
 		_ = db.Close()
 		log.Fatal("Database connection error:", err)
