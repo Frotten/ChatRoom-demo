@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	Conn, err := net.Dial("tcp", "192.168.56.1:8080")
+	Conn, err := net.Dial("tcp", "192.168.56.1:8080") //192.168.1.105
 	Starttime := time.Now()
 	th := make(chan time.Time)
 	end := make(chan bool)
@@ -60,9 +60,15 @@ func main() {
 				file01, err := os.Open(FilePath)
 				if err != nil {
 					fmt.Println("打开文件失败:", err)
+					_, _ = Conn.Write([]byte("打开失败"))
 					continue
 				}
-				fileinfo, _ := os.Stat(FilePath)
+				fileinfo, err := os.Stat(FilePath)
+				if err != nil {
+					fmt.Println("打开文件失败:", err)
+					_, _ = Conn.Write([]byte("打开失败"))
+					continue
+				}
 				size := fileinfo.Size()
 				fmt.Println("请输入文件名及后缀:")
 				FileName, _ := Reader01.ReadString('\n')

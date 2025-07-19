@@ -288,6 +288,9 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 				TempInfo := make([]byte, 1024)
 				n1, _ := Conn.Read(TempInfo)
 				Finger := strings.Index(string(TempInfo[:n1]), "|")
+				if Finger == -1 {
+					continue
+				}
 				Size, _ := strconv.Atoi(string(TempInfo[:Finger]))
 				Filename := string(TempInfo[Finger+1 : n1])
 				file01, _ := os.OpenFile("D:\\TryDir\\TempCopy\\"+Filename, os.O_CREATE|os.O_RDWR, os.ModePerm)
@@ -520,7 +523,7 @@ func Receive(conn net.Conn, ch1 chan int) {
 				fmt.Println("请先登录")
 			} else if string(Message[:n]) == "请输入文件绝对路径:\\\\" {
 				ch1 <- 2
-				fmt.Println("请输入文件路径：")
+				fmt.Println("请输入文件路径：(单斜线请用双斜线代替，避免转义)")
 			} else if string(Message[:n]) == "请输入要下载的文件编号：\\\\" {
 				ch1 <- 3
 				fmt.Println("请输入要下载的文件编号：")
