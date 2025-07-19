@@ -154,7 +154,7 @@ func PreWork(db *sql.DB, Conn net.Conn, Manager *ClientManager) {
 				_ = rows.Close()
 			case "\\4":
 			case "\\5":
-				_, _ = Conn.Write([]byte("错误：尚未登陆\\\\"))
+				_, _ = Conn.Write([]byte("指令：错误：尚未登陆*^*"))
 			case "\\kodayo":
 				tag = true
 				continue
@@ -284,7 +284,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 					_, _ = Conn.Write([]byte("创建目录失败，请检查权限或路径是否正确\n"))
 					continue
 				}
-				_, _ = Conn.Write([]byte("请输入文件绝对路径:\\\\"))
+				_, _ = Conn.Write([]byte("指令：请输入文件绝对路径:*^*"))
 				TempInfo := make([]byte, 1024)
 				n1, _ := Conn.Read(TempInfo)
 				Finger := strings.Index(string(TempInfo[:n1]), "|")
@@ -324,7 +324,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 				BasicLocation := "D:\\TryDir\\TempCopy"
 				DirEntry, err := os.ReadDir(BasicLocation)
 				if err != nil {
-					_, _ = Conn.Write([]byte("读取目录失败，请检查权限或路径是否正确\n"))
+					_, _ = Conn.Write([]byte("读取目录失败，请检查权限或路径是否正确"))
 					continue
 				}
 				mp1 := make(map[int]string)
@@ -339,15 +339,15 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 						_ = Conn.Close()
 						return
 					}
-					_, _ = Conn.Write([]byte("暂无文件在BasicLocation中，请等待添加文件后在进行下载\\\\"))
+					_, _ = Conn.Write([]byte("指令：暂无文件在BasicLocation中，请等待添加文件后在进行下载*^*"))
 					continue
 				}
-				_, _ = Conn.Write([]byte("请输入要下载的文件编号：\\\\"))
+				_, _ = Conn.Write([]byte("指令：请输入要下载的文件编号：*^*"))
 				Temp := make([]byte, 1024)
 				n1, _ := Conn.Read(Temp)
 				Index, err := strconv.Atoi(string(Temp[:n1]))
 				if mp1[Index] == "" || err != nil {
-					Conn.Write([]byte("错误标签，请确保输入的编号正确"))
+					_, _ = Conn.Write([]byte("错误标签，请确保输入的编号正确"))
 					continue
 				}
 				TargetName := BasicLocation + "\\" + mp1[Index] //这里要把数据传输到客户端上
@@ -357,7 +357,7 @@ func AfterLogin(Conn net.Conn, db *sql.DB, Manager *ClientManager, PID string) {
 					continue
 				}
 				fileinfo, _ := file01.Stat()
-				_, _ = Conn.Write([]byte("[[即将开始传输文件]]"))
+				_, _ = Conn.Write([]byte("指令：[[即将开始传输文件]]"))
 				_, _ = Conn.Write([]byte(strconv.Itoa(int(fileinfo.Size())) + "|" + fileinfo.Name()))
 				Temp02 := make([]byte, 1024)
 				for {
@@ -517,42 +517,47 @@ func Receive(conn net.Conn, ch1 chan int) {
 			fmt.Println("读取数据失败：", err)
 			return
 		}
-		if n != 0 {
-			if string(Message[:n]) == "错误：尚未登陆\\\\" {
-				ch1 <- 1
-				fmt.Println("请先登录")
-			} else if string(Message[:n]) == "请输入文件绝对路径:\\\\" {
-				ch1 <- 2
-				fmt.Println("请输入文件路径：(单斜线请用双斜线代替，避免转义)")
-			} else if string(Message[:n]) == "请输入要下载的文件编号：\\\\" {
-				ch1 <- 3
-				fmt.Println("请输入要下载的文件编号：")
-			} else if string(Message[:n]) == "暂无文件在BasicLocation中，请等待添加文件后在进行下载\\\\" {
-				ch1 <- 4
-			} else if string(Message[:n]) == "[[即将开始传输文件]]" {
-				n, _ = conn.Read(Message)
-				Ans := string(Message[:n])
-				Finger := strings.Index(Ans, "|")
-				Size, _ := strconv.Atoi(Ans[:Finger])
-				Title := Ans[Finger+1 : n]
-				file01, _ := os.OpenFile("D:\\TryDir\\TempDownload\\"+Title, os.O_CREATE|os.O_RDWR, os.ModePerm)
-				Temp := make([]byte, 1024)
-				for {
-					n1, err := conn.Read(Temp)
-					Size -= n1
-					if err != nil || n1 == 0 || Size <= 0 {
-						if err == io.EOF || n1 == 0 || Size <= 0 {
-							fmt.Println("文件传输结束")
-							_ = file01.Close()
-							break
+		Infos := strings.Split(strings.TrimSpace(string(Message[:n])), "\n")
+		for _, Info := range Infos {
+			if n != 0 {
+				if strings.HasPrefix(Info, "指令：") {
+					if Info == "指令：错误：尚未登陆*^*" {
+						ch1 <- 1
+						fmt.Println("请先登录")
+					} else if Info == "指令：请输入文件绝对路径:*^*" {
+						ch1 <- 2
+						fmt.Println("请输入文件路径：(单斜线请用双斜线代替，避免转义)")
+					} else if Info == "指令：请输入要下载的文件编号：*^*" {
+						ch1 <- 3
+						fmt.Println("请输入要下载的文件编号：")
+					} else if Info == "指令：暂无文件在BasicLocation中，请等待添加文件后在进行下载*^*" {
+						ch1 <- 4
+					} else if Info == "指令：[[即将开始传输文件]]" {
+						n, _ = conn.Read(Message)
+						Ans := Info
+						Finger := strings.Index(Ans, "|")
+						Size, _ := strconv.Atoi(Ans[:Finger])
+						Title := Ans[Finger+1 : n]
+						file01, _ := os.OpenFile("D:\\TryDir\\TempDownload\\"+Title, os.O_CREATE|os.O_RDWR, os.ModePerm)
+						Temp := make([]byte, 1024)
+						for {
+							n1, err := conn.Read(Temp)
+							Size -= n1
+							if err != nil || n1 == 0 || Size <= 0 {
+								if err == io.EOF || n1 == 0 || Size <= 0 {
+									fmt.Println("文件传输结束")
+									_ = file01.Close()
+									break
+								}
+							}
+							if n1 > 0 {
+								_, _ = file01.Write(Temp[:n1])
+							}
 						}
 					}
-					if n1 > 0 {
-						_, _ = file01.Write(Temp[:n1])
-					}
+				} else {
+					fmt.Println(Info)
 				}
-			} else {
-				fmt.Println(string(Message[:n]))
 			}
 		}
 	}

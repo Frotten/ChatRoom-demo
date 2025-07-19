@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	Conn, err := net.Dial("tcp", "192.168.56.1:8080") //192.168.1.105
+	Conn, err := net.Dial("tcp", "192.168.1.109:8080") //192.168.1.105
 	Starttime := time.Now()
 	th := make(chan time.Time)
 	end := make(chan bool)
